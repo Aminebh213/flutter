@@ -2,9 +2,11 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/semantics.dart'; // <<-- AJOUTE CETTE LIGNE
 import 'package:go_router/go_router.dart';
 import 'gestion_contact.dart';
 import 'signup_page.dart';
+
 
 class SignInPage extends StatefulWidget {
   const SignInPage({Key? key}) : super(key: key);
@@ -20,7 +22,7 @@ class _SignInPageState extends State<SignInPage> {
   final _emailFocusNode = FocusNode();
   final _passwordFocusNode = FocusNode();
   final _buttonFocusNode = FocusNode();
-  
+
   bool _obscurePassword = true;
   bool _isLoading = false;
   String? _errorMessage;
@@ -59,13 +61,16 @@ class _SignInPageState extends State<SignInPage> {
       // Simulation de validation
       if (_emailController.text.contains('@') && _passwordController.text.length >= 6) {
         HapticFeedback.heavyImpact();
-        
+
         if (mounted) {
           setState(() {
             _isLoading = false;
           });
-          
-          // NAVIGATION via GoRouter (remplace Navigator.pushReplacement)
+
+          // annonce aux lecteurs d'écran
+          SemanticsService.announce('Connexion réussie', TextDirection.ltr);
+
+          // NAVIGATION via GoRouter
           context.goNamed(
             'contacts',
             extra: {'userEmail': _emailController.text.trim()},
@@ -81,6 +86,9 @@ class _SignInPageState extends State<SignInPage> {
           _errorMessage = 'Email ou mot de passe incorrect';
         });
         HapticFeedback.vibrate();
+
+        // annonce erreur visible aux lecteurs d'écran
+        SemanticsService.announce('Échec de la connexion', TextDirection.ltr);
       }
     }
   }
@@ -88,7 +96,7 @@ class _SignInPageState extends State<SignInPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Connexion'),
@@ -97,235 +105,248 @@ class _SignInPageState extends State<SignInPage> {
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SizedBox(height: 32),
-                
-                // Logo
-                Icon(
-                  Icons.contact_phone,
-                  size: 80,
-                  color: theme.primaryColor,
-                ),
-                
-                const SizedBox(height: 16),
-                
-                // Titre
-                Text(
-                  'Gestion des Contacts',
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                
-                const SizedBox(height: 8),
-                
-                Text(
-                  'Connectez-vous pour accéder à vos contacts',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: Colors.grey[600],
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                
-                const SizedBox(height: 48),
-                
-                // Message d'erreur global
-                if (_errorMessage != null)
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    margin: const EdgeInsets.only(bottom: 16),
-                    decoration: BoxDecoration(
-                      color: Colors.red[50],
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.red[300]!),
+          child: FocusTraversalGroup(
+            policy: WidgetOrderTraversalPolicy(),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 32),
+
+                  // Logo avec étiquette pour lecteurs d'écran
+                  Semantics(
+                    label: 'Logo application Gestion des Contacts',
+                    child: Icon(
+                      Icons.contact_phone,
+                      size: 80,
+                      color: theme.primaryColor,
                     ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.error_outline, color: Colors.red[700]),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            _errorMessage!,
-                            style: TextStyle(
-                              color: Colors.red[700],
-                              fontSize: 16,
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Titre
+                  Text(
+                    'Gestion des Contacts',
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  Text(
+                    'Connectez-vous pour accéder à vos contacts',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: Colors.grey[600],
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+
+                  const SizedBox(height: 48),
+
+                  // Message d'erreur global
+                  if (_errorMessage != null)
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.red[50],
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.red[300]!),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.error_outline, color: Colors.red[700]),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              _errorMessage!,
+                              style: TextStyle(
+                                color: Colors.red[700],
+                                fontSize: 16,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                
-                // Champ Email
-                TextFormField(
-                  controller: _emailController,
-                  focusNode: _emailFocusNode,
-                  keyboardType: TextInputType.emailAddress,
-                  textInputAction: TextInputAction.next,
-                  autofillHints: const [AutofillHints.email],
-                  style: const TextStyle(fontSize: 16),
-                  decoration: InputDecoration(
-                    labelText: 'Email',
-                    hintText: 'exemple@email.com',
-                    prefixIcon: const Icon(Icons.email_outlined),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 16,
-                    ),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Veuillez entrer votre email';
-                    }
-                    if (!value.contains('@')) {
-                      return 'Email invalide';
-                    }
-                    return null;
-                  },
-                  onFieldSubmitted: (_) {
-                    _passwordFocusNode.requestFocus();
-                  },
-                ),
-                
-                const SizedBox(height: 20),
-                
-                // Champ Mot de passe
-                TextFormField(
-                  controller: _passwordController,
-                  focusNode: _passwordFocusNode,
-                  obscureText: _obscurePassword,
-                  textInputAction: TextInputAction.done,
-                  autofillHints: const [AutofillHints.password],
-                  style: const TextStyle(fontSize: 16),
-                  decoration: InputDecoration(
-                    labelText: 'Mot de passe',
-                    hintText: 'Entrez votre mot de passe',
-                    prefixIcon: const Icon(Icons.lock_outlined),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscurePassword 
-                            ? Icons.visibility_outlined 
-                            : Icons.visibility_off_outlined,
+                        ],
                       ),
-                      onPressed: () {
-                        setState(() {
-                          _obscurePassword = !_obscurePassword;
-                        });
-                        HapticFeedback.selectionClick();
-                      },
-                      tooltip: _obscurePassword 
-                          ? 'Afficher le mot de passe' 
-                          : 'Masquer le mot de passe',
                     ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 16,
-                    ),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Veuillez entrer votre mot de passe';
-                    }
-                    if (value.length < 6) {
-                      return 'Le mot de passe doit contenir au moins 6 caractères';
-                    }
-                    return null;
-                  },
-                  onFieldSubmitted: (_) {
-                    _handleSignIn();
-                  },
-                ),
-                
-                const SizedBox(height: 12),
-                
-                // Lien mot de passe oublié
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Fonction de réinitialisation du mot de passe'),
-                        ),
-                      );
-                    },
-                    child: const Text(
-                      'Mot de passe oublié ?',
-                      style: TextStyle(fontSize: 16),
-                    ),
-                  ),
-                ),
-                
-                const SizedBox(height: 32),
-                
-                // Bouton de connexion
-                SizedBox(
-                  height: 56,
-                  child: ElevatedButton(
-                    focusNode: _buttonFocusNode,
-                    onPressed: _isLoading ? null : _handleSignIn,
-                    style: ElevatedButton.styleFrom(
-                      shape: RoundedRectangleBorder(
+
+                  // Champ Email
+                  TextFormField(
+                    controller: _emailController,
+                    focusNode: _emailFocusNode,
+                    keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.next,
+                    autofillHints: const [AutofillHints.email],
+                    style: const TextStyle(fontSize: 16),
+                    decoration: InputDecoration(
+                      labelText: 'Email',
+                      hintText: 'exemple@email.com',
+                      prefixIcon: const Icon(Icons.email_outlined),
+                      border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      textStyle: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 16,
                       ),
                     ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            height: 24,
-                            width: 24,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                            ),
-                          )
-                        : const Text('Se connecter'),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Veuillez entrer votre email';
+                      }
+                      if (!value.contains('@')) {
+                        return 'Email invalide';
+                      }
+                      return null;
+                    },
+                    onFieldSubmitted: (_) {
+                      _passwordFocusNode.requestFocus();
+                    },
                   ),
-                ),
-                
-                const SizedBox(height: 24),
-                
-                // Lien inscription
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      'Pas encore de compte ? ',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.grey[700],
+
+                  const SizedBox(height: 20),
+
+                  // Champ Mot de passe
+                  TextFormField(
+                    controller: _passwordController,
+                    focusNode: _passwordFocusNode,
+                    obscureText: _obscurePassword,
+                    textInputAction: TextInputAction.done,
+                    autofillHints: const [AutofillHints.password],
+                    style: const TextStyle(fontSize: 16),
+                    decoration: InputDecoration(
+                      labelText: 'Mot de passe',
+                      hintText: 'Entrez votre mot de passe',
+                      prefixIcon: const Icon(Icons.lock_outlined),
+                      suffixIcon: Semantics(
+                        container: true,
+                        button: true,
+                        label: _obscurePassword ? 'Afficher le mot de passe' : 'Masquer le mot de passe',
+                        child: IconButton(
+                          icon: Icon(
+                            _obscurePassword
+                                ? Icons.visibility_outlined
+                                : Icons.visibility_off_outlined,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _obscurePassword = !_obscurePassword;
+                            });
+                            HapticFeedback.selectionClick();
+                            SemanticsService.announce(
+                              _obscurePassword ? 'Mot de passe masqué' : 'Mot de passe visible',
+                              TextDirection.ltr,
+                            );
+                          },
+                          tooltip: _obscurePassword ? 'Afficher le mot de passe' : 'Masquer le mot de passe',
+                        ),
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 16,
                       ),
                     ),
-                    TextButton(
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Veuillez entrer votre mot de passe';
+                      }
+                      if (value.length < 6) {
+                        return 'Le mot de passe doit contenir au moins 6 caractères';
+                      }
+                      return null;
+                    },
+                    onFieldSubmitted: (_) {
+                      _handleSignIn();
+                    },
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // Lien mot de passe oublié
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
                       onPressed: () {
-                        // NAVIGATION via GoRouter (push)
-                        context.pushNamed('signup');
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Fonction de réinitialisation du mot de passe'),
+                          ),
+                        );
                       },
                       child: const Text(
-                        "S'inscrire",
-                        style: TextStyle(
-                          fontSize: 16,
+                        'Mot de passe oublié ?',
+                        style: TextStyle(fontSize: 16),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 32),
+
+                  // Bouton de connexion
+                  SizedBox(
+                    height: 56,
+                    child: ElevatedButton(
+                      focusNode: _buttonFocusNode,
+                      onPressed: _isLoading ? null : _handleSignIn,
+                      style: ElevatedButton.styleFrom(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 18,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
+                      child: _isLoading
+                          ? const SizedBox(
+                              height: 24,
+                              width: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            )
+                          : const Text('Se connecter'),
                     ),
-                  ],
-                ),
-              ],
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // Lien inscription
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'Pas encore de compte ? ',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          // NAVIGATION via GoRouter (push)
+                          context.pushNamed('signup');
+                        },
+                        child: const Text(
+                          "S'inscrire",
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),

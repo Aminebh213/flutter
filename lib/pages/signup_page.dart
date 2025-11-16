@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/semantics.dart';
 import 'package:go_router/go_router.dart';
 import 'gestion_contact.dart';
 
@@ -19,13 +20,13 @@ class _SignUpPageState extends State<SignUpPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
-  
+
   final _nomFocusNode = FocusNode();
   final _prenomFocusNode = FocusNode();
   final _emailFocusNode = FocusNode();
   final _passwordFocusNode = FocusNode();
   final _confirmPasswordFocusNode = FocusNode();
-  
+
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   bool _isLoading = false;
@@ -62,6 +63,7 @@ class _SignUpPageState extends State<SignUpPage> {
         _errorMessage = 'Vous devez accepter les conditions d\'utilisation';
       });
       HapticFeedback.vibrate();
+      SemanticsService.announce('Vous devez accepter les conditions d\'utilisation', TextDirection.ltr);
       return;
     }
 
@@ -75,7 +77,7 @@ class _SignUpPageState extends State<SignUpPage> {
       await Future.delayed(const Duration(seconds: 2));
 
       HapticFeedback.heavyImpact();
-      
+
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -89,8 +91,11 @@ class _SignUpPageState extends State<SignUpPage> {
           ),
         );
 
+        // annonce pour lecteurs d'écran
+        SemanticsService.announce('Compte créé avec succès', TextDirection.ltr);
+
         await Future.delayed(const Duration(seconds: 2));
-        
+
         if (mounted) {
           // NAVIGATION via GoRouter (remplace Navigator.pushReplacement)
           context.goNamed(
@@ -106,6 +111,7 @@ class _SignUpPageState extends State<SignUpPage> {
           _errorMessage = 'Une erreur est survenue lors de l\'inscription';
         });
         HapticFeedback.vibrate();
+        SemanticsService.announce('Erreur lors de l\'inscription', TextDirection.ltr);
       }
     }
   }
@@ -113,7 +119,7 @@ class _SignUpPageState extends State<SignUpPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
@@ -127,358 +133,373 @@ class _SignUpPageState extends State<SignUpPage> {
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SizedBox(height: 16),
-                
-                Icon(
-                  Icons.person_add,
-                  size: 80,
-                  color: theme.primaryColor,
-                ),
-                
-                const SizedBox(height: 16),
-                
-                Text(
-                  'Créer un compte',
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                
-                const SizedBox(height: 8),
-                
-                Text(
-                  'Remplissez les informations ci-dessous',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: Colors.grey[600],
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                
-                const SizedBox(height: 32),
-                
-                if (_errorMessage != null)
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    margin: const EdgeInsets.only(bottom: 16),
-                    decoration: BoxDecoration(
-                      color: Colors.red[50],
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.red[300]!),
+          child: FocusTraversalGroup(
+            policy: WidgetOrderTraversalPolicy(),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 16),
+
+                  Semantics(
+                    label: 'Icône créer un compte',
+                    child: Icon(
+                      Icons.person_add,
+                      size: 80,
+                      color: theme.primaryColor,
                     ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.error_outline, color: Colors.red[700]),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            _errorMessage!,
-                            style: TextStyle(
-                              color: Colors.red[700],
-                              fontSize: 16,
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  Text(
+                    'Créer un compte',
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  Text(
+                    'Remplissez les informations ci-dessous',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: Colors.grey[600],
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+
+                  const SizedBox(height: 32),
+
+                  if (_errorMessage != null)
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.red[50],
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.red[300]!),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.error_outline, color: Colors.red[700]),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              _errorMessage!,
+                              style: TextStyle(
+                                color: Colors.red[700],
+                                fontSize: 16,
+                              ),
                             ),
                           ),
+                        ],
+                      ),
+                    ),
+
+                  TextFormField(
+                    controller: _nomController,
+                    focusNode: _nomFocusNode,
+                    textInputAction: TextInputAction.next,
+                    textCapitalization: TextCapitalization.words,
+                    style: const TextStyle(fontSize: 16),
+                    decoration: InputDecoration(
+                      labelText: 'Nom',
+                      hintText: 'Votre nom de famille',
+                      prefixIcon: const Icon(Icons.person_outline),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 16,
+                      ),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Veuillez entrer votre nom';
+                      }
+                      if (value.length < 2) {
+                        return 'Le nom doit contenir au moins 2 caractères';
+                      }
+                      return null;
+                    },
+                    onFieldSubmitted: (_) {
+                      _prenomFocusNode.requestFocus();
+                    },
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  TextFormField(
+                    controller: _prenomController,
+                    focusNode: _prenomFocusNode,
+                    textInputAction: TextInputAction.next,
+                    textCapitalization: TextCapitalization.words,
+                    style: const TextStyle(fontSize: 16),
+                    decoration: InputDecoration(
+                      labelText: 'Prénom',
+                      hintText: 'Votre prénom',
+                      prefixIcon: const Icon(Icons.person),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 16,
+                      ),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Veuillez entrer votre prénom';
+                      }
+                      if (value.length < 2) {
+                        return 'Le prénom doit contenir au moins 2 caractères';
+                      }
+                      return null;
+                    },
+                    onFieldSubmitted: (_) {
+                      _emailFocusNode.requestFocus();
+                    },
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  TextFormField(
+                    controller: _emailController,
+                    focusNode: _emailFocusNode,
+                    keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.next,
+                    autofillHints: const [AutofillHints.email],
+                    style: const TextStyle(fontSize: 16),
+                    decoration: InputDecoration(
+                      labelText: 'Email',
+                      hintText: 'exemple@email.com',
+                      prefixIcon: const Icon(Icons.email_outlined),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 16,
+                      ),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Veuillez entrer votre email';
+                      }
+                      if (!value.contains('@') || !value.contains('.')) {
+                        return 'Email invalide';
+                      }
+                      return null;
+                    },
+                    onFieldSubmitted: (_) {
+                      _passwordFocusNode.requestFocus();
+                    },
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  TextFormField(
+                    controller: _passwordController,
+                    focusNode: _passwordFocusNode,
+                    obscureText: _obscurePassword,
+                    textInputAction: TextInputAction.next,
+                    autofillHints: const [AutofillHints.newPassword],
+                    style: const TextStyle(fontSize: 16),
+                    decoration: InputDecoration(
+                      labelText: 'Mot de passe',
+                      hintText: 'Minimum 6 caractères',
+                      prefixIcon: const Icon(Icons.lock_outlined),
+                      suffixIcon: Semantics(
+                        container: true,
+                        button: true,
+                        label: _obscurePassword ? 'Afficher le mot de passe' : 'Masquer le mot de passe',
+                        child: IconButton(
+                          icon: Icon(
+                            _obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _obscurePassword = !_obscurePassword;
+                            });
+                            HapticFeedback.selectionClick();
+                            SemanticsService.announce(
+                              _obscurePassword ? 'Mot de passe masqué' : 'Mot de passe visible',
+                              TextDirection.ltr,
+                            );
+                          },
+                          tooltip: _obscurePassword ? 'Afficher le mot de passe' : 'Masquer le mot de passe',
                         ),
-                      ],
-                    ),
-                  ),
-                
-                TextFormField(
-                  controller: _nomController,
-                  focusNode: _nomFocusNode,
-                  textInputAction: TextInputAction.next,
-                  textCapitalization: TextCapitalization.words,
-                  style: const TextStyle(fontSize: 16),
-                  decoration: InputDecoration(
-                    labelText: 'Nom',
-                    hintText: 'Votre nom de famille',
-                    prefixIcon: const Icon(Icons.person_outline),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 16,
-                    ),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Veuillez entrer votre nom';
-                    }
-                    if (value.length < 2) {
-                      return 'Le nom doit contenir au moins 2 caractères';
-                    }
-                    return null;
-                  },
-                  onFieldSubmitted: (_) {
-                    _prenomFocusNode.requestFocus();
-                  },
-                ),
-                
-                const SizedBox(height: 16),
-                
-                TextFormField(
-                  controller: _prenomController,
-                  focusNode: _prenomFocusNode,
-                  textInputAction: TextInputAction.next,
-                  textCapitalization: TextCapitalization.words,
-                  style: const TextStyle(fontSize: 16),
-                  decoration: InputDecoration(
-                    labelText: 'Prénom',
-                    hintText: 'Votre prénom',
-                    prefixIcon: const Icon(Icons.person),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 16,
-                    ),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Veuillez entrer votre prénom';
-                    }
-                    if (value.length < 2) {
-                      return 'Le prénom doit contenir au moins 2 caractères';
-                    }
-                    return null;
-                  },
-                  onFieldSubmitted: (_) {
-                    _emailFocusNode.requestFocus();
-                  },
-                ),
-                
-                const SizedBox(height: 16),
-                
-                TextFormField(
-                  controller: _emailController,
-                  focusNode: _emailFocusNode,
-                  keyboardType: TextInputType.emailAddress,
-                  textInputAction: TextInputAction.next,
-                  autofillHints: const [AutofillHints.email],
-                  style: const TextStyle(fontSize: 16),
-                  decoration: InputDecoration(
-                    labelText: 'Email',
-                    hintText: 'exemple@email.com',
-                    prefixIcon: const Icon(Icons.email_outlined),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 16,
-                    ),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Veuillez entrer votre email';
-                    }
-                    if (!value.contains('@') || !value.contains('.')) {
-                      return 'Email invalide';
-                    }
-                    return null;
-                  },
-                  onFieldSubmitted: (_) {
-                    _passwordFocusNode.requestFocus();
-                  },
-                ),
-                
-                const SizedBox(height: 16),
-                
-                TextFormField(
-                  controller: _passwordController,
-                  focusNode: _passwordFocusNode,
-                  obscureText: _obscurePassword,
-                  textInputAction: TextInputAction.next,
-                  autofillHints: const [AutofillHints.newPassword],
-                  style: const TextStyle(fontSize: 16),
-                  decoration: InputDecoration(
-                    labelText: 'Mot de passe',
-                    hintText: 'Minimum 6 caractères',
-                    prefixIcon: const Icon(Icons.lock_outlined),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscurePassword 
-                            ? Icons.visibility_outlined 
-                            : Icons.visibility_off_outlined,
                       ),
-                      onPressed: () {
-                        setState(() {
-                          _obscurePassword = !_obscurePassword;
-                        });
-                        HapticFeedback.selectionClick();
-                      },
-                      tooltip: _obscurePassword 
-                          ? 'Afficher le mot de passe' 
-                          : 'Masquer le mot de passe',
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 16,
-                    ),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Veuillez entrer un mot de passe';
-                    }
-                    if (value.length < 6) {
-                      return 'Le mot de passe doit contenir au moins 6 caractères';
-                    }
-                    return null;
-                  },
-                  onFieldSubmitted: (_) {
-                    _confirmPasswordFocusNode.requestFocus();
-                  },
-                ),
-                
-                const SizedBox(height: 16),
-                
-                TextFormField(
-                  controller: _confirmPasswordController,
-                  focusNode: _confirmPasswordFocusNode,
-                  obscureText: _obscureConfirmPassword,
-                  textInputAction: TextInputAction.done,
-                  style: const TextStyle(fontSize: 16),
-                  decoration: InputDecoration(
-                    labelText: 'Confirmer le mot de passe',
-                    hintText: 'Retapez votre mot de passe',
-                    prefixIcon: const Icon(Icons.lock_outlined),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscureConfirmPassword 
-                            ? Icons.visibility_outlined 
-                            : Icons.visibility_off_outlined,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      onPressed: () {
-                        setState(() {
-                          _obscureConfirmPassword = !_obscureConfirmPassword;
-                        });
-                        HapticFeedback.selectionClick();
-                      },
-                      tooltip: _obscureConfirmPassword 
-                          ? 'Afficher le mot de passe' 
-                          : 'Masquer le mot de passe',
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 16,
+                      ),
                     ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 16,
-                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Veuillez entrer un mot de passe';
+                      }
+                      if (value.length < 6) {
+                        return 'Le mot de passe doit contenir au moins 6 caractères';
+                      }
+                      return null;
+                    },
+                    onFieldSubmitted: (_) {
+                      _confirmPasswordFocusNode.requestFocus();
+                    },
                   ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Veuillez confirmer votre mot de passe';
-                    }
-                    if (value != _passwordController.text) {
-                      return 'Les mots de passe ne correspondent pas';
-                    }
-                    return null;
-                  },
-                  onFieldSubmitted: (_) {
-                    _handleSignUp();
-                  },
-                ),
-                
-                const SizedBox(height: 20),
-                
-                Row(
-                  children: [
-                    Checkbox(
-                      value: _acceptedTerms,
-                      onChanged: (value) {
-                        setState(() {
-                          _acceptedTerms = value ?? false;
-                        });
-                        HapticFeedback.selectionClick();
-                      },
+
+                  const SizedBox(height: 16),
+
+                  TextFormField(
+                    controller: _confirmPasswordController,
+                    focusNode: _confirmPasswordFocusNode,
+                    obscureText: _obscureConfirmPassword,
+                    textInputAction: TextInputAction.done,
+                    style: const TextStyle(fontSize: 16),
+                    decoration: InputDecoration(
+                      labelText: 'Confirmer le mot de passe',
+                      hintText: 'Retapez votre mot de passe',
+                      prefixIcon: const Icon(Icons.lock_outlined),
+                      suffixIcon: Semantics(
+                        container: true,
+                        button: true,
+                        label: _obscureConfirmPassword ? 'Afficher le mot de passe de confirmation' : 'Masquer le mot de passe de confirmation',
+                        child: IconButton(
+                          icon: Icon(
+                            _obscureConfirmPassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _obscureConfirmPassword = !_obscureConfirmPassword;
+                            });
+                            HapticFeedback.selectionClick();
+                            SemanticsService.announce(
+                              _obscureConfirmPassword ? 'Confirmation masquée' : 'Confirmation visible',
+                              TextDirection.ltr,
+                            );
+                          },
+                          tooltip: _obscureConfirmPassword ? 'Afficher le mot de passe' : 'Masquer le mot de passe',
+                        ),
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 16,
+                      ),
                     ),
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () {
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Veuillez confirmer votre mot de passe';
+                      }
+                      if (value != _passwordController.text) {
+                        return 'Les mots de passe ne correspondent pas';
+                      }
+                      return null;
+                    },
+                    onFieldSubmitted: (_) {
+                      _handleSignUp();
+                    },
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  Row(
+                    children: [
+                      Checkbox(
+                        value: _acceptedTerms,
+                        onChanged: (value) {
                           setState(() {
-                            _acceptedTerms = !_acceptedTerms;
+                            _acceptedTerms = value ?? false;
                           });
                           HapticFeedback.selectionClick();
                         },
-                        child: Text(
-                          'J\'accepte les conditions d\'utilisation et la politique de confidentialité',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[700],
+                      ),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _acceptedTerms = !_acceptedTerms;
+                            });
+                            HapticFeedback.selectionClick();
+                          },
+                          child: Text(
+                            'J\'accepte les conditions d\'utilisation et la politique de confidentialité',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[700],
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-                
-                const SizedBox(height: 24),
-                
-                SizedBox(
-                  height: 56,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _handleSignUp,
-                    style: ElevatedButton.styleFrom(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      textStyle: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            height: 24,
-                            width: 24,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                            ),
-                          )
-                        : const Text('S\'inscrire'),
+                    ],
                   ),
-                ),
-                
-                const SizedBox(height: 24),
-                
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      'Vous avez déjà un compte ? ',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.grey[700],
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () {
-                        // Retour à la page précédente (SignIn)
-                        context.pop();
-                      },
-                      child: const Text(
-                        'Se connecter',
-                        style: TextStyle(
-                          fontSize: 16,
+
+                  const SizedBox(height: 24),
+
+                  SizedBox(
+                    height: 56,
+                    child: ElevatedButton(
+                      onPressed: _isLoading ? null : _handleSignUp,
+                      style: ElevatedButton.styleFrom(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 18,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
+                      child: _isLoading
+                          ? const SizedBox(
+                              height: 24,
+                              width: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            )
+                          : const Text('S\'inscrire'),
                     ),
-                  ],
-                ),
-              ],
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'Vous avez déjà un compte ? ',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          context.pop();
+                        },
+                        child: const Text(
+                          'Se connecter',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),

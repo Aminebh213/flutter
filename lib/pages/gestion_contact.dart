@@ -3,9 +3,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/semantics.dart'; // <<-- AJOUTE CETTE LIGNE
 import 'package:go_router/go_router.dart';
 import '../models/contact.dart';
 import '../services/db_helper.dart';
+
 
 class GestionContactPage extends StatefulWidget {
   final String userEmail;
@@ -72,7 +74,6 @@ class _GestionContactPageState extends State<GestionContactPage> {
           Contact(prenom: 'Mohamed', nom: 'Karim', telephone: '+216 25 345 678', email: 'mohamed.karim@email.com'),
         ];
 
-        // Persister les exemples sans bloquer l'UI (catch d'erreur)
         Future.wait(_contacts.map((c) => _db.insertContact(c))).then((_) async {
           try {
             final refreshed = await _db.getAllContacts();
@@ -93,11 +94,8 @@ class _GestionContactPageState extends State<GestionContactPage> {
         _filteredContacts = List.from(_contacts);
       }
     } catch (e, st) {
-      // Log pour debug
       debugPrint('[_loadContacts] Erreur: $e');
       debugPrint(st.toString());
-
-      // Fallback : vider listes pour ne pas bloquer l'UI
       _contacts = [];
       _filteredContacts = [];
     } finally {
@@ -140,9 +138,13 @@ class _GestionContactPageState extends State<GestionContactPage> {
             });
             HapticFeedback.mediumImpact();
             _showSnackBar('Contact ajouté avec succès', Colors.green);
+
+            // Annonce pour lecteurs d'écran
+            SemanticsService.announce('Contact ${contact.prenom} ${contact.nom} ajouté', TextDirection.ltr);
           } catch (e, st) {
             debugPrint('[DB] Erreur insertContact: $e\n$st');
             _showSnackBar('Erreur lors de l\'ajout', Colors.red);
+            SemanticsService.announce('Erreur lors de l\'ajout du contact', TextDirection.ltr);
           }
         },
       ),
@@ -169,9 +171,13 @@ class _GestionContactPageState extends State<GestionContactPage> {
             }
             HapticFeedback.mediumImpact();
             _showSnackBar('Contact modifié avec succès', Colors.blue);
+
+            // annonce modification
+            SemanticsService.announce('Contact ${updated.prenom} ${updated.nom} modifié', TextDirection.ltr);
           } catch (e, st) {
             debugPrint('[DB] Erreur updateContact: $e\n$st');
             _showSnackBar('Erreur lors de la modification', Colors.red);
+            SemanticsService.announce('Erreur lors de la modification du contact', TextDirection.ltr);
           }
         },
       ),
@@ -184,6 +190,7 @@ class _GestionContactPageState extends State<GestionContactPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        semanticLabel: 'Confirmer la suppression',
         title: const Text('Confirmer la suppression'),
         content: Text('Voulez-vous vraiment supprimer ${contact.fullName} ?'),
         actions: [
@@ -199,9 +206,13 @@ class _GestionContactPageState extends State<GestionContactPage> {
                 Navigator.pop(context);
                 HapticFeedback.heavyImpact();
                 _showSnackBar('Contact supprimé', Colors.red);
+
+                // annonce suppression
+                SemanticsService.announce('Contact ${contact.prenom} ${contact.nom} supprimé', TextDirection.ltr);
               } catch (e, st) {
                 debugPrint('[DB] Erreur deleteContact: $e\n$st');
                 _showSnackBar('Erreur lors de la suppression', Colors.red);
+                SemanticsService.announce('Erreur lors de la suppression du contact', TextDirection.ltr);
               }
             },
             child: const Text('Supprimer', style: TextStyle(color: Colors.red)),
@@ -215,6 +226,7 @@ class _GestionContactPageState extends State<GestionContactPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        semanticLabel: 'Détails du contact',
         title: Text(contact.fullName),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -254,6 +266,7 @@ class _GestionContactPageState extends State<GestionContactPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        semanticLabel: 'Déconnexion',
         title: const Text('Déconnexion'),
         content: const Text('Voulez-vous vraiment vous déconnecter ?'),
         actions: [
@@ -315,7 +328,11 @@ class _GestionContactPageState extends State<GestionContactPage> {
           : _filteredContacts.isEmpty
               ? _buildEmptyState()
               : _buildContactsList(),
-      floatingActionButton: FloatingActionButton(onPressed: _addContact, tooltip: 'Ajouter un contact', child: const Icon(Icons.add)),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _addContact,
+        tooltip: 'Ajouter un contact',
+        child: Semantics(label: 'Ajouter un contact', button: true, child: const Icon(Icons.add)),
+      ),
     );
   }
 
@@ -340,7 +357,10 @@ class _GestionContactPageState extends State<GestionContactPage> {
         return Card(
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           child: ListTile(
-            leading: CircleAvatar(backgroundColor: Theme.of(context).primaryColor, child: Text(_getInitials(contact.prenom, contact.nom), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
+            leading: Semantics(
+              label: 'Avatar ${contact.prenom} ${contact.nom}',
+              child: CircleAvatar(backgroundColor: Theme.of(context).primaryColor, child: Text(_getInitials(contact.prenom, contact.nom), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
+            ),
             title: Text(contact.fullName, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
             subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               const SizedBox(height: 4),
@@ -356,9 +376,30 @@ class _GestionContactPageState extends State<GestionContactPage> {
                 else if (value == 'delete') _deleteContact(index);
               },
               itemBuilder: (context) => [
-                const PopupMenuItem(value: 'details', child: Row(children: [Icon(Icons.info, size: 20), SizedBox(width: 8), Text('Détails')])),
-                const PopupMenuItem(value: 'edit', child: Row(children: [Icon(Icons.edit, size: 20), SizedBox(width: 8), Text('Modifier')])),
-                const PopupMenuItem(value: 'delete', child: Row(children: [Icon(Icons.delete, size: 20, color: Colors.red), SizedBox(width: 8), Text('Supprimer', style: TextStyle(color: Colors.red))])),
+                PopupMenuItem(
+                  value: 'details',
+                  child: Semantics(
+                    button: true,
+                    label: 'Voir les détails de ${contact.prenom} ${contact.nom}',
+                    child: Row(children: [Icon(Icons.info, size: 20), const SizedBox(width: 8), const Text('Détails')]),
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'edit',
+                  child: Semantics(
+                    button: true,
+                    label: 'Modifier ${contact.prenom} ${contact.nom}',
+                    child: Row(children: [Icon(Icons.edit, size: 20), const SizedBox(width: 8), const Text('Modifier')]),
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'delete',
+                  child: Semantics(
+                    button: true,
+                    label: 'Supprimer ${contact.prenom} ${contact.nom}',
+                    child: Row(children: [Icon(Icons.delete, size: 20, color: Colors.red), const SizedBox(width: 8), const Text('Supprimer', style: TextStyle(color: Colors.red))]),
+                  ),
+                ),
               ],
             ),
             onTap: () => _showContactDetails(contact),
@@ -428,6 +469,7 @@ class _ContactDialogState extends State<_ContactDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      semanticLabel: widget.contact == null ? 'Nouveau contact' : 'Modifier contact',
       title: Text(widget.contact == null ? 'Nouveau contact' : 'Modifier'),
       content: Form(
         key: _formKey,
