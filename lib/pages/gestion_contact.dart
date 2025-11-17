@@ -3,11 +3,10 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/semantics.dart'; // <<-- AJOUTE CETTE LIGNE
+import 'package:flutter/semantics.dart';
 import 'package:go_router/go_router.dart';
 import '../models/contact.dart';
 import '../services/db_helper.dart';
-
 
 class GestionContactPage extends StatefulWidget {
   final String userEmail;
@@ -21,39 +20,46 @@ class GestionContactPage extends StatefulWidget {
   State<GestionContactPage> createState() => _GestionContactPageState();
 }
 
-class _GestionContactPageState extends State<GestionContactPage> {
+class _GestionContactPageState extends State<GestionContactPage> with SingleTickerProviderStateMixin {
   final DbHelper _db = DbHelper();
   List<Contact> _contacts = [];
   List<Contact> _filteredContacts = [];
   final TextEditingController _searchController = TextEditingController();
   bool _isSearching = false;
   bool _isLoading = true;
+  late AnimationController _fabAnimationController;
+  late Animation<double> _fabAnimation;
 
   @override
   void initState() {
     super.initState();
-
-    // Écoute pour la recherche
     _searchController.addListener(() {
       _filterContacts(_searchController.text);
     });
 
-    // Chargement initial des contacts (sécurisé)
+    _fabAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+    _fabAnimation = CurvedAnimation(
+      parent: _fabAnimationController,
+      curve: Curves.easeInOut,
+    );
+
     _loadContacts();
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _fabAnimationController.dispose();
     super.dispose();
   }
 
-  // Chargement sécurisé des contacts depuis la DB
   Future<void> _loadContacts() async {
     setState(() => _isLoading = true);
 
     try {
-      // Si exécution sur le Web, sqflite n'est pas disponible -> fallback
       if (kIsWeb) {
         debugPrint('[DB] Platform = Web -> sqflite non supporté. Chargement de données de demo.');
         _contacts = [
@@ -61,13 +67,13 @@ class _GestionContactPageState extends State<GestionContactPage> {
           Contact(prenom: 'Fatma', nom: 'Trabelsi', telephone: '+216 22 234 567', email: 'fatma.trabelsi@email.com'),
         ];
         _filteredContacts = List.from(_contacts);
+        _fabAnimationController.forward();
         return;
       }
 
       final list = await _db.getAllContacts();
 
       if (list.isEmpty) {
-        // Optionnel : insérer des exemples si la DB est vide (asynchrone)
         _contacts = [
           Contact(prenom: 'Ahmed', nom: 'Ben Ali', telephone: '+216 20 123 456', email: 'ahmed.benali@email.com'),
           Contact(prenom: 'Fatma', nom: 'Trabelsi', telephone: '+216 22 234 567', email: 'fatma.trabelsi@email.com'),
@@ -93,6 +99,7 @@ class _GestionContactPageState extends State<GestionContactPage> {
         _contacts = list;
         _filteredContacts = List.from(_contacts);
       }
+      _fabAnimationController.forward();
     } catch (e, st) {
       debugPrint('[_loadContacts] Erreur: $e');
       debugPrint(st.toString());
@@ -123,10 +130,11 @@ class _GestionContactPageState extends State<GestionContactPage> {
     });
   }
 
-  // Ajout d'un contact
   void _addContact() {
-    showDialog(
+    showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (context) => _ContactDialog(
         onSave: (contact) async {
           try {
@@ -138,8 +146,6 @@ class _GestionContactPageState extends State<GestionContactPage> {
             });
             HapticFeedback.mediumImpact();
             _showSnackBar('Contact ajouté avec succès', Colors.green);
-
-            // Annonce pour lecteurs d'écran
             SemanticsService.announce('Contact ${contact.prenom} ${contact.nom} ajouté', TextDirection.ltr);
           } catch (e, st) {
             debugPrint('[DB] Erreur insertContact: $e\n$st');
@@ -151,11 +157,12 @@ class _GestionContactPageState extends State<GestionContactPage> {
     );
   }
 
-  // Édition
   void _editContact(int filteredIndex) {
     final contact = _filteredContacts[filteredIndex];
-    showDialog(
+    showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (context) => _ContactDialog(
         contact: contact,
         onSave: (updated) async {
@@ -171,8 +178,6 @@ class _GestionContactPageState extends State<GestionContactPage> {
             }
             HapticFeedback.mediumImpact();
             _showSnackBar('Contact modifié avec succès', Colors.blue);
-
-            // annonce modification
             SemanticsService.announce('Contact ${updated.prenom} ${updated.nom} modifié', TextDirection.ltr);
           } catch (e, st) {
             debugPrint('[DB] Erreur updateContact: $e\n$st');
@@ -184,18 +189,32 @@ class _GestionContactPageState extends State<GestionContactPage> {
     );
   }
 
-  // Suppression
   void _deleteContact(int filteredIndex) {
     final contact = _filteredContacts[filteredIndex];
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         semanticLabel: 'Confirmer la suppression',
-        title: const Text('Confirmer la suppression'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 28),
+            SizedBox(width: 12),
+            Text('Confirmer la suppression'),
+          ],
+        ),
         content: Text('Voulez-vous vraiment supprimer ${contact.fullName} ?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annuler')),
           TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
             onPressed: () async {
               try {
                 if (contact.id != null) await _db.deleteContact(contact.id!);
@@ -206,8 +225,6 @@ class _GestionContactPageState extends State<GestionContactPage> {
                 Navigator.pop(context);
                 HapticFeedback.heavyImpact();
                 _showSnackBar('Contact supprimé', Colors.red);
-
-                // annonce suppression
                 SemanticsService.announce('Contact ${contact.prenom} ${contact.nom} supprimé', TextDirection.ltr);
               } catch (e, st) {
                 debugPrint('[DB] Erreur deleteContact: $e\n$st');
@@ -215,7 +232,7 @@ class _GestionContactPageState extends State<GestionContactPage> {
                 SemanticsService.announce('Erreur lors de la suppression du contact', TextDirection.ltr);
               }
             },
-            child: const Text('Supprimer', style: TextStyle(color: Colors.red)),
+            child: const Text('Supprimer'),
           ),
         ],
       ),
@@ -223,43 +240,115 @@ class _GestionContactPageState extends State<GestionContactPage> {
   }
 
   void _showContactDetails(Contact contact) {
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (context) => AlertDialog(
-        semanticLabel: 'Détails du contact',
-        title: Text(contact.fullName),
-        content: Column(
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(25)),
+        ),
+        padding: const EdgeInsets.all(24),
+        child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildDetailRow(Icons.phone, 'Téléphone', contact.telephone),
-            const SizedBox(height: 12),
-            _buildDetailRow(Icons.email, 'Email', contact.email),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Hero(
+              tag: 'avatar_${contact.id}',
+              child: CircleAvatar(
+                radius: 50,
+                backgroundColor: _getAvatarColor(contact.prenom),
+                child: Text(
+                  _getInitials(contact.prenom, contact.nom),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              contact.fullName,
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 32),
+            _buildModernDetailRow(Icons.phone_rounded, 'Téléphone', contact.telephone),
+            const SizedBox(height: 16),
+            _buildModernDetailRow(Icons.email_rounded, 'Email', contact.email),
+            const SizedBox(height: 32),
           ],
         ),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fermer'))],
       ),
     );
   }
 
-  Widget _buildDetailRow(IconData icon, String label, String value) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 20, color: Colors.grey[600]),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-            Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-          ]),
-        ),
-      ],
+  Widget _buildModernDetailRow(IconData icon, String label, String value) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey[100],
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Theme.of(context).primaryColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: Theme.of(context).primaryColor),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   void _showSnackBar(String message, Color color) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), backgroundColor: color, duration: const Duration(seconds: 2)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   void _logout() {
@@ -267,15 +356,36 @@ class _GestionContactPageState extends State<GestionContactPage> {
       context: context,
       builder: (context) => AlertDialog(
         semanticLabel: 'Déconnexion',
-        title: const Text('Déconnexion'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.logout_rounded, color: Colors.orange),
+            SizedBox(width: 12),
+            Text('Déconnexion'),
+          ],
+        ),
         content: const Text('Voulez-vous vraiment vous déconnecter ?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annuler')),
           TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
             onPressed: () {
               Navigator.pop(context);
               context.goNamed('signin');
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Déconnecté avec succès'), backgroundColor: Colors.orange, duration: Duration(seconds: 2)));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Déconnecté avec succès'),
+                  backgroundColor: Colors.orange,
+                  duration: Duration(seconds: 2),
+                ),
+              );
             },
             child: const Text('Déconnexion'),
           ),
@@ -284,22 +394,53 @@ class _GestionContactPageState extends State<GestionContactPage> {
     );
   }
 
+  Color _getAvatarColor(String name) {
+    final colors = [
+      const Color(0xFF6366F1),
+      const Color(0xFF8B5CF6),
+      const Color(0xFFEC4899),
+      const Color(0xFFF43F5E),
+      const Color(0xFFF97316),
+      const Color(0xFF14B8A6),
+      const Color(0xFF10B981),
+      const Color(0xFF3B82F6),
+    ];
+    return colors[name.length % colors.length];
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.grey[50],
       appBar: AppBar(
         automaticallyImplyLeading: false,
+        elevation: 0,
+        backgroundColor: Colors.white,
         title: _isSearching
             ? TextField(
-                controller: _searchController,
-                autofocus: true,
-                style: const TextStyle(fontSize: 16),
-                decoration: const InputDecoration(hintText: 'Rechercher un contact...', border: InputBorder.none),
-              )
-            : const Text('Gestion des Contacts'),
+          controller: _searchController,
+          autofocus: true,
+          style: const TextStyle(fontSize: 16),
+          decoration: InputDecoration(
+            hintText: 'Rechercher un contact...',
+            border: InputBorder.none,
+            hintStyle: TextStyle(color: Colors.grey[400]),
+          ),
+        )
+            : const Text(
+          'Mes Contacts',
+          style: TextStyle(
+            color: Colors.black87,
+            fontWeight: FontWeight.bold,
+            fontSize: 24,
+          ),
+        ),
         actions: [
           IconButton(
-            icon: Icon(_isSearching ? Icons.close : Icons.search),
+            icon: Icon(
+              _isSearching ? Icons.close_rounded : Icons.search_rounded,
+              color: Colors.black87,
+            ),
             onPressed: () {
               setState(() {
                 _isSearching = !_isSearching;
@@ -312,13 +453,40 @@ class _GestionContactPageState extends State<GestionContactPage> {
             tooltip: _isSearching ? 'Fermer la recherche' : 'Rechercher',
           ),
           PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert),
+            icon: const Icon(Icons.more_vert_rounded, color: Colors.black87),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             onSelected: (value) {
               if (value == 'logout') _logout();
             },
             itemBuilder: (context) => [
-              PopupMenuItem(value: 'profile', child: Row(children: [const Icon(Icons.person), const SizedBox(width: 8), Expanded(child: Text(widget.userEmail, overflow: TextOverflow.ellipsis))])),
-              const PopupMenuItem(value: 'logout', child: Row(children: [Icon(Icons.logout, color: Colors.red), SizedBox(width: 8), Text('Déconnexion', style: TextStyle(color: Colors.red))])),
+              PopupMenuItem(
+                value: 'profile',
+                child: Row(
+                  children: [
+                    const Icon(Icons.person_rounded),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        widget.userEmail,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'logout',
+                child: Row(
+                  children: [
+                    Icon(Icons.logout_rounded, color: Colors.red),
+                    SizedBox(width: 12),
+                    Text(
+                      'Déconnexion',
+                      style: TextStyle(color: Colors.red),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
         ],
@@ -326,83 +494,197 @@ class _GestionContactPageState extends State<GestionContactPage> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _filteredContacts.isEmpty
-              ? _buildEmptyState()
-              : _buildContactsList(),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _addContact,
-        tooltip: 'Ajouter un contact',
-        child: Semantics(label: 'Ajouter un contact', button: true, child: const Icon(Icons.add)),
+          ? _buildEmptyState()
+          : _buildContactsList(),
+      floatingActionButton: ScaleTransition(
+        scale: _fabAnimation,
+        child: FloatingActionButton.extended(
+          onPressed: _addContact,
+          tooltip: 'Ajouter un contact',
+          icon: const Icon(Icons.add_rounded),
+          label: const Text('Nouveau'),
+          elevation: 4,
+        ),
       ),
     );
   }
 
   Widget _buildEmptyState() {
     return Center(
-      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Icon(_searchController.text.isEmpty ? Icons.contacts_outlined : Icons.search_off, size: 80, color: Colors.grey[400]),
-        const SizedBox(height: 16),
-        Text(_searchController.text.isEmpty ? 'Aucun contact' : 'Aucun résultat', style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: Colors.grey[600])),
-        const SizedBox(height: 8),
-        Text(_searchController.text.isEmpty ? 'Appuyez sur + pour ajouter votre premier contact' : 'Essayez une autre recherche', style: TextStyle(fontSize: 16, color: Colors.grey[500]), textAlign: TextAlign.center),
-      ]),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.grey[200],
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              _searchController.text.isEmpty
+                  ? Icons.contacts_rounded
+                  : Icons.search_off_rounded,
+              size: 80,
+              color: Colors.grey[400],
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            _searchController.text.isEmpty ? 'Aucun contact' : 'Aucun résultat',
+            style: const TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 48),
+            child: Text(
+              _searchController.text.isEmpty
+                  ? 'Commencez par ajouter votre premier contact'
+                  : 'Essayez une autre recherche',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey[600],
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildContactsList() {
     return ListView.builder(
       itemCount: _filteredContacts.length,
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.all(16),
       itemBuilder: (context, index) {
         final contact = _filteredContacts[index];
-        return Card(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          child: ListTile(
-            leading: Semantics(
-              label: 'Avatar ${contact.prenom} ${contact.nom}',
-              child: CircleAvatar(backgroundColor: Theme.of(context).primaryColor, child: Text(_getInitials(contact.prenom, contact.nom), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
-            ),
-            title: Text(contact.fullName, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
-            subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const SizedBox(height: 4),
-              Row(children: [const Icon(Icons.phone, size: 14, color: Colors.grey), const SizedBox(width: 4), Text(contact.telephone)]),
-              const SizedBox(height: 2),
-              Row(children: [const Icon(Icons.email, size: 14, color: Colors.grey), const SizedBox(width: 4), Expanded(child: Text(contact.email, overflow: TextOverflow.ellipsis))]),
-            ]),
-            trailing: PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert),
-              onSelected: (value) {
-                if (value == 'details') _showContactDetails(contact);
-                else if (value == 'edit') _editContact(index);
-                else if (value == 'delete') _deleteContact(index);
-              },
-              itemBuilder: (context) => [
-                PopupMenuItem(
-                  value: 'details',
-                  child: Semantics(
-                    button: true,
-                    label: 'Voir les détails de ${contact.prenom} ${contact.nom}',
-                    child: Row(children: [Icon(Icons.info, size: 20), const SizedBox(width: 8), const Text('Détails')]),
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 'edit',
-                  child: Semantics(
-                    button: true,
-                    label: 'Modifier ${contact.prenom} ${contact.nom}',
-                    child: Row(children: [Icon(Icons.edit, size: 20), const SizedBox(width: 8), const Text('Modifier')]),
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 'delete',
-                  child: Semantics(
-                    button: true,
-                    label: 'Supprimer ${contact.prenom} ${contact.nom}',
-                    child: Row(children: [Icon(Icons.delete, size: 20, color: Colors.red), const SizedBox(width: 8), const Text('Supprimer', style: TextStyle(color: Colors.red))]),
-                  ),
+        return TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0.0, end: 1.0),
+          duration: Duration(milliseconds: 300 + (index * 50)),
+          curve: Curves.easeOut,
+          builder: (context, value, child) {
+            return Transform.translate(
+              offset: Offset(0, 20 * (1 - value)),
+              child: Opacity(
+                opacity: value,
+                child: child,
+              ),
+            );
+          },
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
                 ),
               ],
             ),
-            onTap: () => _showContactDetails(contact),
+            child: ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              leading: Hero(
+                tag: 'avatar_${contact.id}',
+                child: CircleAvatar(
+                  radius: 28,
+                  backgroundColor: _getAvatarColor(contact.prenom),
+                  child: Text(
+                    _getInitials(contact.prenom, contact.nom),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    ),
+                  ),
+                ),
+              ),
+              title: Text(
+                contact.fullName,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 16,
+                ),
+              ),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Icon(Icons.phone_rounded, size: 14, color: Colors.grey[600]),
+                      const SizedBox(width: 6),
+                      Text(
+                        contact.telephone,
+                        style: TextStyle(color: Colors.grey[700], fontSize: 13),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(Icons.email_rounded, size: 14, color: Colors.grey[600]),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          contact.email,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: Colors.grey[700], fontSize: 13),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              trailing: PopupMenuButton<String>(
+                icon: Icon(Icons.more_vert_rounded, color: Colors.grey[600]),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                onSelected: (value) {
+                  if (value == 'details') _showContactDetails(contact);
+                  else if (value == 'edit') _editContact(index);
+                  else if (value == 'delete') _deleteContact(index);
+                },
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'details',
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_rounded, size: 20),
+                        SizedBox(width: 12),
+                        Text('Détails'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'edit',
+                    child: Row(
+                      children: [
+                        Icon(Icons.edit_rounded, size: 20),
+                        SizedBox(width: 12),
+                        Text('Modifier'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: Row(
+                      children: [
+                        Icon(Icons.delete_rounded, size: 20, color: Colors.red),
+                        SizedBox(width: 12),
+                        Text('Supprimer', style: TextStyle(color: Colors.red)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              onTap: () => _showContactDetails(contact),
+            ),
           ),
         );
       },
@@ -416,7 +698,7 @@ class _GestionContactPageState extends State<GestionContactPage> {
   }
 }
 
-// Dialog pour ajouter/modifier un contact
+// Dialog moderne pour ajouter/modifier un contact
 class _ContactDialog extends StatefulWidget {
   final Contact? contact;
   final Function(Contact) onSave;
@@ -468,28 +750,146 @@ class _ContactDialogState extends State<_ContactDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      semanticLabel: widget.contact == null ? 'Nouveau contact' : 'Modifier contact',
-      title: Text(widget.contact == null ? 'Nouveau contact' : 'Modifier'),
-      content: Form(
-        key: _formKey,
-        child: SingleChildScrollView(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            TextFormField(controller: _prenomController, decoration: const InputDecoration(labelText: 'Prénom *', prefixIcon: Icon(Icons.person_outline)), validator: (v) => v?.trim().isEmpty ?? true ? 'Requis' : null),
-            const SizedBox(height: 12),
-            TextFormField(controller: _nomController, decoration: const InputDecoration(labelText: 'Nom *', prefixIcon: Icon(Icons.person)), validator: (v) => v?.trim().isEmpty ?? true ? 'Requis' : null),
-            const SizedBox(height: 12),
-            TextFormField(controller: _telephoneController, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Téléphone *', prefixIcon: Icon(Icons.phone)), validator: (v) => v?.trim().isEmpty ?? true ? 'Requis' : null),
-            const SizedBox(height: 12),
-            TextFormField(controller: _emailController, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'Email *', prefixIcon: Icon(Icons.email)), validator: (value) {
-              if (value?.trim().isEmpty ?? true) return 'Requis';
-              if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value!.trim())) return 'Email invalide';
-              return null;
-            }),
-          ]),
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(25)),
+      ),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  widget.contact == null ? 'Nouveau contact' : 'Modifier le contact',
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                _buildModernTextField(
+                  controller: _prenomController,
+                  label: 'Prénom',
+                  icon: Icons.person_outline_rounded,
+                  validator: (v) => v?.trim().isEmpty ?? true ? 'Prénom requis' : null,
+                ),
+                const SizedBox(height: 16),
+                _buildModernTextField(
+                  controller: _nomController,
+                  label: 'Nom',
+                  icon: Icons.person_rounded,
+                  validator: (v) => v?.trim().isEmpty ?? true ? 'Nom requis' : null,
+                ),
+                const SizedBox(height: 16),
+                _buildModernTextField(
+                  controller: _telephoneController,
+                  label: 'Téléphone',
+                  icon: Icons.phone_rounded,
+                  keyboardType: TextInputType.phone,
+                  validator: (v) => v?.trim().isEmpty ?? true ? 'Téléphone requis' : null,
+                ),
+                const SizedBox(height: 16),
+                _buildModernTextField(
+                  controller: _emailController,
+                  label: 'Email',
+                  icon: Icons.email_rounded,
+                  keyboardType: TextInputType.emailAddress,
+                  validator: (value) {
+                    if (value?.trim().isEmpty ?? true) return 'Email requis';
+                    if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value!.trim())) {
+                      return 'Email invalide';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 32),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text('Annuler'),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: _save,
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          elevation: 2,
+                        ),
+                        child: const Text('Enregistrer'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
+          ),
         ),
       ),
-      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annuler')), ElevatedButton(onPressed: _save, child: const Text('Enregistrer'))],
+    );
+  }
+
+  Widget _buildModernTextField({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    TextInputType? keyboardType,
+    String? Function(String?)? validator,
+  }) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: keyboardType,
+      validator: validator,
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(icon),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey[300]!),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey[300]!),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 2),
+        ),
+        filled: true,
+        fillColor: Colors.grey[50],
+      ),
     );
   }
 }
