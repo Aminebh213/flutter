@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/semantics.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/contact.dart';
 import '../services/db_helper.dart';
 
@@ -61,10 +62,9 @@ class _GestionContactPageState extends State<GestionContactPage> with SingleTick
 
     try {
       if (kIsWeb) {
-        debugPrint('[DB] Platform = Web -> sqflite non supporté. Chargement de données de demo.');
         _contacts = [
-          Contact(prenom: 'Ahmed', nom: 'Ben Ali', telephone: '+216 20 123 456', email: 'ahmed.benali@email.com'),
-          Contact(prenom: 'Fatma', nom: 'Trabelsi', telephone: '+216 22 234 567', email: 'fatma.trabelsi@email.com'),
+          Contact(prenom: 'Ahmed', nom: 'Ben Ali', telephone: '+216 20 123 456', email: 'ahmed@email.com'),
+          Contact(prenom: 'Fatma', nom: 'Trabelsi', telephone: '+216 22 234 567', email: 'fatma@email.com'),
         ];
         _filteredContacts = List.from(_contacts);
         _fabAnimationController.forward();
@@ -75,42 +75,21 @@ class _GestionContactPageState extends State<GestionContactPage> with SingleTick
 
       if (list.isEmpty) {
         _contacts = [
-          Contact(prenom: 'Ahmed', nom: 'Ben Ali', telephone: '+216 20 123 456', email: 'ahmed.benali@email.com'),
-          Contact(prenom: 'Fatma', nom: 'Trabelsi', telephone: '+216 22 234 567', email: 'fatma.trabelsi@email.com'),
-          Contact(prenom: 'Mohamed', nom: 'Karim', telephone: '+216 25 345 678', email: 'mohamed.karim@email.com'),
+          Contact(prenom: 'Ahmed', nom: 'Ben Ali', telephone: '+216 20 123 456', email: 'ahmed@email.com'),
+          Contact(prenom: 'Fatma', nom: 'Trabelsi', telephone: '+216 22 234 567', email: 'fatma@email.com'),
         ];
-
-        Future.wait(_contacts.map((c) => _db.insertContact(c))).then((_) async {
-          try {
-            final refreshed = await _db.getAllContacts();
-            if (mounted) {
-              setState(() {
-                _contacts = refreshed;
-                _filteredContacts = List.from(_contacts);
-              });
-            }
-          } catch (e, st) {
-            debugPrint('[DB] Erreur lors du refresh après insert d\'exemples: $e\n$st');
-          }
-        }).catchError((e, st) {
-          debugPrint('[DB] Erreur lors de l\'insertion d\'exemples: $e\n$st');
-        });
       } else {
         _contacts = list;
-        _filteredContacts = List.from(_contacts);
       }
+
+      _filteredContacts = List.from(_contacts);
       _fabAnimationController.forward();
-    } catch (e, st) {
-      debugPrint('[_loadContacts] Erreur: $e');
-      debugPrint(st.toString());
+
+    } catch (e) {
       _contacts = [];
       _filteredContacts = [];
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -119,182 +98,278 @@ class _GestionContactPageState extends State<GestionContactPage> with SingleTick
       if (query.trim().isEmpty) {
         _filteredContacts = List.from(_contacts);
       } else {
-        final s = query.toLowerCase().trim();
+        final s = query.toLowerCase();
         _filteredContacts = _contacts.where((c) {
           final nomComplet = '${c.prenom} ${c.nom}'.toLowerCase();
           return nomComplet.contains(s) ||
-              c.telephone.toLowerCase().contains(s) ||
-              c.email.toLowerCase().contains(s);
+                 c.telephone.toLowerCase().contains(s) ||
+                 c.email.toLowerCase().contains(s);
         }).toList();
       }
     });
   }
 
+  // ---------- Méthodes implémentées (add / edit / delete / details) ----------
+
+  // Ajouter un contact
   void _addContact() {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _ContactDialog(
-        onSave: (contact) async {
-          try {
-            final id = await _db.insertContact(contact);
-            contact.id = id;
-            setState(() {
-              _contacts.add(contact);
-              _filterContacts(_searchController.text);
-            });
-            HapticFeedback.mediumImpact();
-            _showSnackBar('Contact ajouté avec succès', Colors.green);
-            SemanticsService.announce('Contact ${contact.prenom} ${contact.nom} ajouté', TextDirection.ltr);
-          } catch (e, st) {
-            debugPrint('[DB] Erreur insertContact: $e\n$st');
-            _showSnackBar('Erreur lors de l\'ajout', Colors.red);
-            SemanticsService.announce('Erreur lors de l\'ajout du contact', TextDirection.ltr);
-          }
-        },
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+      ),
+      builder: (_) => SafeArea(
+        top: false,
+        child: Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom + MediaQuery.of(context).padding.bottom + 12,
+          ),
+          child: _ContactDialog(
+            onSave: (Contact newContact) async {
+              try {
+                if (kIsWeb) {
+                  // Générer un id temporaire pour la web demo
+                  newContact.id = DateTime.now().millisecondsSinceEpoch;
+                  setState(() {
+                    _contacts.insert(0, newContact);
+                    _filterContacts(_searchController.text);
+                  });
+                  _showSnackBar("Contact ajouté", Colors.green);
+                  return;
+                }
+
+                final id = await _db.insertContact(newContact);
+                newContact.id = id;
+                setState(() {
+                  _contacts.insert(0, newContact);
+                  _filterContacts(_searchController.text);
+                });
+                _showSnackBar("Contact ajouté", Colors.green);
+              } catch (e) {
+                _showSnackBar("Erreur lors de l'ajout", Colors.red);
+              }
+            },
+          ),
+        ),
       ),
     );
   }
 
-  void _editContact(int filteredIndex) {
-    final contact = _filteredContacts[filteredIndex];
+  // Modifier un contact (index correspond à _filteredContacts index)
+  void _editContact(int index) {
+    final contact = _filteredContacts[index];
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _ContactDialog(
-        contact: contact,
-        onSave: (updated) async {
-          try {
-            updated.id = contact.id;
-            await _db.updateContact(updated);
-            final origIndex = _contacts.indexWhere((c) => c.id == contact.id);
-            if (origIndex != -1) {
-              setState(() {
-                _contacts[origIndex] = updated;
-                _filterContacts(_searchController.text);
-              });
-            }
-            HapticFeedback.mediumImpact();
-            _showSnackBar('Contact modifié avec succès', Colors.blue);
-            SemanticsService.announce('Contact ${updated.prenom} ${updated.nom} modifié', TextDirection.ltr);
-          } catch (e, st) {
-            debugPrint('[DB] Erreur updateContact: $e\n$st');
-            _showSnackBar('Erreur lors de la modification', Colors.red);
-            SemanticsService.announce('Erreur lors de la modification du contact', TextDirection.ltr);
-          }
-        },
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+      ),
+      builder: (_) => SafeArea(
+        top: false,
+        child: Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom + MediaQuery.of(context).padding.bottom + 12,
+          ),
+          child: _ContactDialog(
+            contact: contact,
+            onSave: (Contact updated) async {
+              try {
+                if (kIsWeb) {
+                  // mettre à jour en mémoire (web demo)
+                  final masterIndex = _contacts.indexWhere((c) => c.id == updated.id);
+                  if (masterIndex != -1) {
+                    setState(() {
+                      _contacts[masterIndex] = updated;
+                      _filterContacts(_searchController.text);
+                    });
+                  } else {
+                    // fallback : remplacer par matching name/email/phone
+                    final fallback = _contacts.indexWhere((c) =>
+                        c.email == updated.email || c.telephone == updated.telephone);
+                    if (fallback != -1) {
+                      setState(() {
+                        _contacts[fallback] = updated;
+                        _filterContacts(_searchController.text);
+                      });
+                    }
+                  }
+                  _showSnackBar("Contact modifié", Colors.green);
+                  return;
+                }
+
+                await _db.updateContact(updated);
+
+                final masterIndex = _contacts.indexWhere((c) => c.id == updated.id);
+                if (masterIndex != -1) {
+                  setState(() {
+                    _contacts[masterIndex] = updated;
+                    _filterContacts(_searchController.text);
+                  });
+                } else {
+                  // si pas trouvé par id, essayer par email/telephone
+                  final fallback = _contacts.indexWhere((c) =>
+                      c.email == updated.email || c.telephone == updated.telephone);
+                  if (fallback != -1) {
+                    setState(() {
+                      _contacts[fallback] = updated;
+                      _filterContacts(_searchController.text);
+                    });
+                  }
+                }
+                _showSnackBar("Contact modifié", Colors.green);
+              } catch (e) {
+                _showSnackBar("Erreur lors de la modification", Colors.red);
+              }
+            },
+          ),
+        ),
       ),
     );
   }
 
-  void _deleteContact(int filteredIndex) {
-    final contact = _filteredContacts[filteredIndex];
+  // Supprimer un contact (index correspond à _filteredContacts index)
+  void _deleteContact(int index) {
+    final contact = _filteredContacts[index];
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        semanticLabel: 'Confirmer la suppression',
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
-          children: [
-            Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 28),
-            SizedBox(width: 12),
-            Text('Confirmer la suppression'),
-          ],
-        ),
-        content: Text('Voulez-vous vraiment supprimer ${contact.fullName} ?'),
+        title: const Text("Confirmer la suppression"),
+        content: Text("Voulez-vous supprimer ${contact.fullName} ?"),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Annuler'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Annuler")),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
             onPressed: () async {
+              Navigator.pop(context); // fermer le dialog
               try {
-                if (contact.id != null) await _db.deleteContact(contact.id!);
+                if (!kIsWeb && contact.id != null) {
+                  await _db.deleteContact(contact.id!);
+                }
+                // Supprimer localement des deux listes
                 setState(() {
-                  _contacts.removeWhere((c) => c.id == contact.id);
+                  _contacts.removeWhere((c) => c.id == contact.id && contact.id != null);
+                  // Si id null (rare), supprimer par matching téléphone/email
+                  _contacts.removeWhere((c) =>
+                      contact.id == null &&
+                      (c.email == contact.email || c.telephone == contact.telephone));
                   _filterContacts(_searchController.text);
                 });
-                Navigator.pop(context);
-                HapticFeedback.heavyImpact();
-                _showSnackBar('Contact supprimé', Colors.red);
-                SemanticsService.announce('Contact ${contact.prenom} ${contact.nom} supprimé', TextDirection.ltr);
-              } catch (e, st) {
-                debugPrint('[DB] Erreur deleteContact: $e\n$st');
-                _showSnackBar('Erreur lors de la suppression', Colors.red);
-                SemanticsService.announce('Erreur lors de la suppression du contact', TextDirection.ltr);
+                _showSnackBar("Contact supprimé", Colors.green);
+              } catch (e) {
+                _showSnackBar("Erreur lors de la suppression", Colors.red);
               }
             },
-            child: const Text('Supprimer'),
+            child: const Text("Supprimer"),
           ),
         ],
       ),
     );
   }
 
+  // Afficher les détails d'un contact
   void _showContactDetails(Contact contact) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (context) => Container(
-        decoration: BoxDecoration(
-          color: Theme.of(context).scaffoldBackgroundColor,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(25)),
-        ),
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(2),
-              ),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+        final bottomPadding = MediaQuery.of(context).padding.bottom;
+        return SafeArea(
+          top: false,
+          child: Padding(
+            padding: EdgeInsets.only(
+              bottom: bottomInset + bottomPadding + 12,
+              left: 16,
+              right: 16,
+              top: 16,
             ),
-            const SizedBox(height: 24),
-            Hero(
-              tag: 'avatar_${contact.id}',
-              child: CircleAvatar(
-                radius: 50,
-                backgroundColor: _getAvatarColor(contact.prenom),
-                child: Text(
-                  _getInitials(contact.prenom, contact.nom),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
-                  ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))),
+                const SizedBox(height: 12),
+                CircleAvatar(
+                  radius: 36,
+                  backgroundColor: _getAvatarColor(contact.prenom),
+                  child: Text(_getInitials(contact.prenom, contact.nom), style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
                 ),
-              ),
+                const SizedBox(height: 12),
+                Text(contact.fullName, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                Text(contact.email, style: TextStyle(color: Colors.grey[700])),
+                const SizedBox(height: 16),
+
+                _buildModernDetailRow(Icons.phone_rounded, "Téléphone", contact.telephone, onTap: () {
+                  Navigator.pop(context);
+                  _openWhatsApp(contact.telephone);
+                }),
+
+                const SizedBox(height: 12),
+
+                _buildModernDetailRow(Icons.email_rounded, "Email", contact.email),
+
+                const SizedBox(height: 18),
+
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          // trouver l'index filtré et ouvrir edit
+                          final idx = _filteredContacts.indexWhere((c) => c.id == contact.id);
+                          if (idx != -1) {
+                            _editContact(idx);
+                          } else {
+                            // try find by phone/email fallback
+                            final fallbackIdx = _filteredContacts.indexWhere((c) =>
+                                c.email == contact.email || c.telephone == contact.telephone);
+                            if (fallbackIdx != -1) _editContact(fallbackIdx);
+                          }
+                        },
+                        child: const Text("Modifier"),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                        onPressed: () {
+                          Navigator.pop(context);
+                          final idx = _filteredContacts.indexWhere((c) => c.id == contact.id);
+                          if (idx != -1) {
+                            _deleteContact(idx);
+                          } else {
+                            final fallbackIdx = _filteredContacts.indexWhere((c) =>
+                                c.email == contact.email || c.telephone == contact.telephone);
+                            if (fallbackIdx != -1) _deleteContact(fallbackIdx);
+                          }
+                        },
+                        child: const Text("Supprimer"),
+                      ),
+                    ),
+                  ],
+                ),
+
+                // espace final pour éviter recouvrement par la barre gestuelle
+                SizedBox(height: MediaQuery.of(context).padding.bottom + 8),
+              ],
             ),
-            const SizedBox(height: 16),
-            Text(
-              contact.fullName,
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 32),
-            _buildModernDetailRow(Icons.phone_rounded, 'Téléphone', contact.telephone),
-            const SizedBox(height: 16),
-            _buildModernDetailRow(Icons.email_rounded, 'Email', contact.email),
-            const SizedBox(height: 32),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
-  Widget _buildModernDetailRow(IconData icon, String label, String value) {
-    return Container(
+  // ⬇️ Version 2 : icône chat modernisée (verte, alignée, propre)
+  Widget _buildModernDetailRow(IconData icon, String label, String value, {VoidCallback? onTap}) {
+    final row = Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.grey[100],
@@ -311,34 +386,47 @@ class _GestionContactPageState extends State<GestionContactPage> with SingleTick
             child: Icon(icon, color: Theme.of(context).primaryColor),
           ),
           const SizedBox(width: 16),
+
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                    fontWeight: FontWeight.w500,
-                  ),
+                Text(label,
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   value,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
+                    decoration: onTap != null ? TextDecoration.underline : null,
                   ),
                 ),
               ],
             ),
           ),
+
+          if (onTap != null)
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.green.withOpacity(.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: IconButton(
+                icon: const Icon(Icons.chat, color: Colors.green),
+                onPressed: onTap,
+                tooltip: "Contacter sur WhatsApp",
+              ),
+            ),
         ],
       ),
     );
-  }
 
+    return onTap != null
+        ? InkWell(onTap: onTap, borderRadius: BorderRadius.circular(16), child: row)
+        : row;
+  }
   void _showSnackBar(String message, Color color) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -346,7 +434,6 @@ class _GestionContactPageState extends State<GestionContactPage> with SingleTick
         backgroundColor: color,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        duration: const Duration(seconds: 2),
       ),
     );
   }
@@ -355,40 +442,32 @@ class _GestionContactPageState extends State<GestionContactPage> with SingleTick
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        semanticLabel: 'Déconnexion',
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Row(
           children: [
             Icon(Icons.logout_rounded, color: Colors.orange),
             SizedBox(width: 12),
-            Text('Déconnexion'),
+            Text("Déconnexion"),
           ],
         ),
-        content: const Text('Voulez-vous vraiment vous déconnecter ?'),
+        content: const Text("Voulez-vous vraiment vous déconnecter ?"),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Annuler'),
+            child: const Text("Annuler"),
           ),
           ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              context.goNamed('signin');
+            },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.orange,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            onPressed: () {
-              Navigator.pop(context);
-              context.goNamed('signin');
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Déconnecté avec succès'),
-                  backgroundColor: Colors.orange,
-                  duration: Duration(seconds: 2),
-                ),
-              );
-            },
-            child: const Text('Déconnexion'),
-          ),
+            child: const Text("Déconnexion"),
+          )
         ],
       ),
     );
@@ -413,28 +492,29 @@ class _GestionContactPageState extends State<GestionContactPage> with SingleTick
     return Scaffold(
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        automaticallyImplyLeading: false,
-        elevation: 0,
         backgroundColor: Colors.white,
+        elevation: 0,
+        automaticallyImplyLeading: false,
         title: _isSearching
             ? TextField(
-          controller: _searchController,
-          autofocus: true,
-          style: const TextStyle(fontSize: 16),
-          decoration: InputDecoration(
-            hintText: 'Rechercher un contact...',
-            border: InputBorder.none,
-            hintStyle: TextStyle(color: Colors.grey[400]),
-          ),
-        )
+                controller: _searchController,
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: "Rechercher un contact...",
+                  border: InputBorder.none,
+                  hintStyle: TextStyle(color: Colors.grey[400]),
+                ),
+                style: const TextStyle(fontSize: 16),
+              )
             : const Text(
-          'Mes Contacts',
-          style: TextStyle(
-            color: Colors.black87,
-            fontWeight: FontWeight.bold,
-            fontSize: 24,
-          ),
-        ),
+                "Mes Contacts",
+                style: TextStyle(
+                  color: Colors.black87,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+
         actions: [
           IconButton(
             icon: Icon(
@@ -450,17 +530,17 @@ class _GestionContactPageState extends State<GestionContactPage> with SingleTick
                 }
               });
             },
-            tooltip: _isSearching ? 'Fermer la recherche' : 'Rechercher',
           ),
+
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert_rounded, color: Colors.black87),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             onSelected: (value) {
-              if (value == 'logout') _logout();
+              if (value == "logout") _logout();
             },
             itemBuilder: (context) => [
               PopupMenuItem(
-                value: 'profile',
+                value: "profile",
                 child: Row(
                   children: [
                     const Icon(Icons.person_rounded),
@@ -475,15 +555,12 @@ class _GestionContactPageState extends State<GestionContactPage> with SingleTick
                 ),
               ),
               const PopupMenuItem(
-                value: 'logout',
+                value: "logout",
                 child: Row(
                   children: [
                     Icon(Icons.logout_rounded, color: Colors.red),
                     SizedBox(width: 12),
-                    Text(
-                      'Déconnexion',
-                      style: TextStyle(color: Colors.red),
-                    ),
+                    Text("Déconnexion", style: TextStyle(color: Colors.red)),
                   ],
                 ),
               ),
@@ -491,19 +568,19 @@ class _GestionContactPageState extends State<GestionContactPage> with SingleTick
           ),
         ],
       ),
+
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _filteredContacts.isEmpty
-          ? _buildEmptyState()
-          : _buildContactsList(),
+              ? _buildEmptyState()
+              : _buildContactsList(),
+
       floatingActionButton: ScaleTransition(
         scale: _fabAnimation,
         child: FloatingActionButton.extended(
           onPressed: _addContact,
-          tooltip: 'Ajouter un contact',
           icon: const Icon(Icons.add_rounded),
-          label: const Text('Nouveau'),
-          elevation: 4,
+          label: const Text("Nouveau"),
         ),
       ),
     );
@@ -516,40 +593,28 @@ class _GestionContactPageState extends State<GestionContactPage> with SingleTick
         children: [
           Container(
             padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.grey[200],
+            decoration: const BoxDecoration(
               shape: BoxShape.circle,
+              color: Color(0xFFE5E7EB),
             ),
             child: Icon(
-              _searchController.text.isEmpty
-                  ? Icons.contacts_rounded
-                  : Icons.search_off_rounded,
+              _searchController.text.isEmpty ? Icons.contacts_rounded : Icons.search_off_rounded,
               size: 80,
               color: Colors.grey[400],
             ),
           ),
           const SizedBox(height: 24),
           Text(
-            _searchController.text.isEmpty ? 'Aucun contact' : 'Aucun résultat',
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
-            ),
+            _searchController.text.isEmpty ? "Aucun contact" : "Aucun résultat",
+            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 48),
-            child: Text(
-              _searchController.text.isEmpty
-                  ? 'Commencez par ajouter votre premier contact'
-                  : 'Essayez une autre recherche',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey[600],
-              ),
-              textAlign: TextAlign.center,
-            ),
+          Text(
+            _searchController.text.isEmpty
+                ? "Commencez par ajouter votre premier contact"
+                : "Essayez une autre recherche",
+            style: TextStyle(color: Colors.grey[600], fontSize: 16),
+            textAlign: TextAlign.center,
           ),
         ],
       ),
@@ -562,143 +627,192 @@ class _GestionContactPageState extends State<GestionContactPage> with SingleTick
       padding: const EdgeInsets.all(16),
       itemBuilder: (context, index) {
         final contact = _filteredContacts[index];
-        return TweenAnimationBuilder<double>(
-          tween: Tween(begin: 0.0, end: 1.0),
-          duration: Duration(milliseconds: 300 + (index * 50)),
-          curve: Curves.easeOut,
-          builder: (context, value, child) {
-            return Transform.translate(
-              offset: Offset(0, 20 * (1 - value)),
-              child: Opacity(
-                opacity: value,
-                child: child,
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(.05),
+                offset: const Offset(0, 3),
+                blurRadius: 8,
               ),
-            );
-          },
-          child: Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
+            ],
+          ),
+          child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+
+            leading: CircleAvatar(
+              radius: 26,
+              backgroundColor: _getAvatarColor(contact.prenom),
+              child: Text(
+                _getInitials(contact.prenom, contact.nom),
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+            ),
+
+            title: Text(
+              contact.fullName,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 6),
+
+                Row(
+                  children: [
+                    const Icon(Icons.phone_rounded, size: 14, color: Colors.grey),
+                    const SizedBox(width: 6),
+
+                    // NUMÉRO + ICÔNE WHATSAPP MODERNE
+                    Expanded(
+                      child: Row(
+                        children: [
+                          // texte du numéro cliquable
+                          InkWell(
+                            onTap: () => _openWhatsApp(contact.telephone),
+                            child: Text(
+                              contact.telephone,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                decoration: TextDecoration.underline,
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(width: 10),
+
+                          // bouton moderne
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.green.withOpacity(.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: IconButton(
+                              padding: const EdgeInsets.all(4),
+                              constraints: const BoxConstraints(),
+                              icon: const Icon(Icons.chat, size: 16, color: Colors.green),
+                              onPressed: () => _openWhatsApp(contact.telephone),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 4),
+
+                Row(
+                  children: [
+                    const Icon(Icons.email_rounded, size: 14, color: Colors.grey),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        contact.email,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: Colors.grey[700], fontSize: 13),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
-            child: ListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              leading: Hero(
-                tag: 'avatar_${contact.id}',
-                child: CircleAvatar(
-                  radius: 28,
-                  backgroundColor: _getAvatarColor(contact.prenom),
-                  child: Text(
-                    _getInitials(contact.prenom, contact.nom),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 18,
-                    ),
-                  ),
-                ),
-              ),
-              title: Text(
-                contact.fullName,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 16,
-                ),
-              ),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 6),
-                  Row(
+
+            trailing: PopupMenuButton<String>(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              icon: Icon(Icons.more_vert_rounded, color: Colors.grey[700]),
+              onSelected: (value) {
+                if (value == "details") _showContactDetails(contact);
+                if (value == "edit") _editContact(index);
+                if (value == "delete") _deleteContact(index);
+              },
+              itemBuilder: (context) => const [
+                PopupMenuItem(
+                  value: "details",
+                  child: Row(
                     children: [
-                      Icon(Icons.phone_rounded, size: 14, color: Colors.grey[600]),
-                      const SizedBox(width: 6),
-                      Text(
-                        contact.telephone,
-                        style: TextStyle(color: Colors.grey[700], fontSize: 13),
-                      ),
+                      Icon(Icons.info, size: 20),
+                      SizedBox(width: 10),
+                      Text("Détails"),
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  Row(
+                ),
+                PopupMenuItem(
+                  value: "edit",
+                  child: Row(
                     children: [
-                      Icon(Icons.email_rounded, size: 14, color: Colors.grey[600]),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          contact.email,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: Colors.grey[700], fontSize: 13),
-                        ),
-                      ),
+                      Icon(Icons.edit, size: 20),
+                      SizedBox(width: 10),
+                      Text("Modifier"),
                     ],
                   ),
-                ],
-              ),
-              trailing: PopupMenuButton<String>(
-                icon: Icon(Icons.more_vert_rounded, color: Colors.grey[600]),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                onSelected: (value) {
-                  if (value == 'details') _showContactDetails(contact);
-                  else if (value == 'edit') _editContact(index);
-                  else if (value == 'delete') _deleteContact(index);
-                },
-                itemBuilder: (context) => [
-                  const PopupMenuItem(
-                    value: 'details',
-                    child: Row(
-                      children: [
-                        Icon(Icons.info_rounded, size: 20),
-                        SizedBox(width: 12),
-                        Text('Détails'),
-                      ],
-                    ),
+                ),
+                PopupMenuItem(
+                  value: "delete",
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete, size: 20, color: Colors.red),
+                      SizedBox(width: 10),
+                      Text("Supprimer", style: TextStyle(color: Colors.red)),
+                    ],
                   ),
-                  const PopupMenuItem(
-                    value: 'edit',
-                    child: Row(
-                      children: [
-                        Icon(Icons.edit_rounded, size: 20),
-                        SizedBox(width: 12),
-                        Text('Modifier'),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'delete',
-                    child: Row(
-                      children: [
-                        Icon(Icons.delete_rounded, size: 20, color: Colors.red),
-                        SizedBox(width: 12),
-                        Text('Supprimer', style: TextStyle(color: Colors.red)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              onTap: () => _showContactDetails(contact),
+                ),
+              ],
             ),
           ),
         );
       },
     );
   }
-
   String _getInitials(String prenom, String nom) {
     final a = prenom.isNotEmpty ? prenom[0].toUpperCase() : '';
     final b = nom.isNotEmpty ? nom[0].toUpperCase() : '';
     return '$a$b';
   }
+
+  // ---------- OUVERTURE WHATSAPP ----------
+  Future<void> _openWhatsApp(String rawNumber) async {
+    if (rawNumber.trim().isEmpty) {
+      _showSnackBar("Numéro vide", Colors.red);
+      return;
+    }
+
+    // Nettoyage du numéro
+    String digits = rawNumber.replaceAll(RegExp(r'[^0-9+]'), '');
+
+    if (digits.startsWith('+')) digits = digits.substring(1);
+    if (digits.startsWith('00')) digits = digits.replaceFirst('00', '');
+
+    // Si numéro tunisien local → ajouter +216
+    if (digits.startsWith('0')) {
+      digits = digits.replaceFirst(RegExp(r'^0+'), '');
+      digits = '216$digits';
+    }
+
+    if (digits.length < 6) {
+      _showSnackBar("Numéro invalide", Colors.red);
+      return;
+    }
+
+    final uri = Uri.parse("https://wa.me/$digits");
+
+    try {
+      final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched) {
+        _showSnackBar("Impossible d'ouvrir WhatsApp", Colors.red);
+      }
+    } catch (e) {
+      _showSnackBar("Erreur lors de l'ouverture", Colors.red);
+    }
+  }
 }
 
-// Dialog moderne pour ajouter/modifier un contact
+// ---------- DIALOG POUR AJOUTER / MODIFIER UN CONTACT ----------
 class _ContactDialog extends StatefulWidget {
   final Contact? contact;
   final Function(Contact) onSave;
@@ -719,10 +833,11 @@ class _ContactDialogState extends State<_ContactDialog> {
   @override
   void initState() {
     super.initState();
-    _prenomController = TextEditingController(text: widget.contact?.prenom ?? '');
-    _nomController = TextEditingController(text: widget.contact?.nom ?? '');
-    _telephoneController = TextEditingController(text: widget.contact?.telephone ?? '');
-    _emailController = TextEditingController(text: widget.contact?.email ?? '');
+
+    _prenomController = TextEditingController(text: widget.contact?.prenom ?? "");
+    _nomController = TextEditingController(text: widget.contact?.nom ?? "");
+    _telephoneController = TextEditingController(text: widget.contact?.telephone ?? "");
+    _emailController = TextEditingController(text: widget.contact?.email ?? "");
   }
 
   @override
@@ -743,6 +858,7 @@ class _ContactDialogState extends State<_ContactDialog> {
         telephone: _telephoneController.text.trim(),
         email: _emailController.text.trim(),
       );
+
       widget.onSave(contact);
       Navigator.pop(context);
     }
@@ -750,25 +866,28 @@ class _ContactDialogState extends State<_ContactDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(25)),
-      ),
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-      ),
-      child: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
+
+    return SafeArea(
+      top: false,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(25)),
+        ),
+        padding: EdgeInsets.only(bottom: bottomInset + bottomPadding + 12),
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+
+            child: Form(
+              key: _formKey,
+
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
                     width: 40,
                     height: 4,
                     decoration: BoxDecoration(
@@ -776,84 +895,83 @@ class _ContactDialogState extends State<_ContactDialog> {
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
-                ),
-                const SizedBox(height: 24),
-                Text(
-                  widget.contact == null ? 'Nouveau contact' : 'Modifier le contact',
-                  style: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
+
+                  const SizedBox(height: 20),
+
+                  Text(
+                    widget.contact == null ? "Nouveau contact" : "Modifier le contact",
+                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                   ),
-                ),
-                const SizedBox(height: 24),
-                _buildModernTextField(
-                  controller: _prenomController,
-                  label: 'Prénom',
-                  icon: Icons.person_outline_rounded,
-                  validator: (v) => v?.trim().isEmpty ?? true ? 'Prénom requis' : null,
-                ),
-                const SizedBox(height: 16),
-                _buildModernTextField(
-                  controller: _nomController,
-                  label: 'Nom',
-                  icon: Icons.person_rounded,
-                  validator: (v) => v?.trim().isEmpty ?? true ? 'Nom requis' : null,
-                ),
-                const SizedBox(height: 16),
-                _buildModernTextField(
-                  controller: _telephoneController,
-                  label: 'Téléphone',
-                  icon: Icons.phone_rounded,
-                  keyboardType: TextInputType.phone,
-                  validator: (v) => v?.trim().isEmpty ?? true ? 'Téléphone requis' : null,
-                ),
-                const SizedBox(height: 16),
-                _buildModernTextField(
-                  controller: _emailController,
-                  label: 'Email',
-                  icon: Icons.email_rounded,
-                  keyboardType: TextInputType.emailAddress,
-                  validator: (value) {
-                    if (value?.trim().isEmpty ?? true) return 'Email requis';
-                    if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value!.trim())) {
-                      return 'Email invalide';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 32),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.pop(context),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
+
+                  const SizedBox(height: 24),
+
+                  _buildField(
+                    controller: _prenomController,
+                    label: "Prénom",
+                    icon: Icons.person_outline_rounded,
+                    validator: (v) => v!.isEmpty ? "Prénom requis" : null,
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  _buildField(
+                    controller: _nomController,
+                    label: "Nom",
+                    icon: Icons.person_rounded,
+                    validator: (v) => v!.isEmpty ? "Nom requis" : null,
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  _buildField(
+                    controller: _telephoneController,
+                    label: "Téléphone",
+                    icon: Icons.phone_rounded,
+                    keyboardType: TextInputType.phone,
+                    validator: (v) => v!.isEmpty ? "Téléphone requis" : null,
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  _buildField(
+                    controller: _emailController,
+                    label: "Email",
+                    icon: Icons.email_rounded,
+                    keyboardType: TextInputType.emailAddress,
+                    validator: (v) {
+                      if (v!.isEmpty) return "Email requis";
+                      if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(v)) {
+                        return "Email invalide";
+                      }
+                      return null;
+                    },
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text("Annuler"),
                         ),
-                        child: const Text('Annuler'),
                       ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: _save,
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          elevation: 2,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: _save,
+                          child: const Text("Enregistrer"),
                         ),
-                        child: const Text('Enregistrer'),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-              ],
+                    ],
+                  ),
+
+                  const SizedBox(height: 8),
+                  // espace final pour la barre système
+                  SizedBox(height: bottomPadding + 8),
+                ],
+              ),
             ),
           ),
         ),
@@ -861,7 +979,7 @@ class _ContactDialogState extends State<_ContactDialog> {
     );
   }
 
-  Widget _buildModernTextField({
+  Widget _buildField({
     required TextEditingController controller,
     required String label,
     required IconData icon,
@@ -875,20 +993,11 @@ class _ContactDialogState extends State<_ContactDialog> {
       decoration: InputDecoration(
         labelText: label,
         prefixIcon: Icon(icon),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey[300]!),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey[300]!),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 2),
-        ),
         filled: true,
         fillColor: Colors.grey[50],
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
       ),
     );
   }

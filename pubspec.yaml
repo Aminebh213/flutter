@@ -20,6 +20,7 @@ dependencies:
   # SQLite (sqflite) and path helper
   sqflite: ^2.2.8+4
   path: ^1.8.3
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:
